@@ -1,0 +1,289 @@
+services:
+############# RabbitMQ-Service #################
+  rabbitmq:
+    image: rabbitmq:3-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+      RABBITMQ_LOAD_DEFINITIONS: /etc/rabbitmq/definitions.json  # เพิ่มบรรทัดนี้เพื่อให้ RabbitMQ โหลด definitions
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - "rabbitmq_data:/var/lib/rabbitmq"
+      - "./rabbitmq_definitions.json:/etc/rabbitmq/definitions.json"  # เปลี่ยนบรรทัดนี้
+    networks:
+      - corninline-net
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: on-failure
+
+  ############# PostgreSQL database #################
+  users-db:
+    image: postgres:latest
+    environment:
+      POSTGRES_DB: ${USERS_DB_NAME}
+      POSTGRES_USER: ${USERS_DB_USERNAME}
+      POSTGRES_PASSWORD: ${USERS_DB_PASSWORD}
+    volumes:
+      - corninlinevolume-data:/var/lib/postgresql/data
+      - ./db/init/users.sql:/docker-entrypoint-initdb.d/users.sql
+    ports:
+      - "${USERS_DB_PORT}:5432"
+    networks:
+      - corninline-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${USERS_DB_USERNAME} -d ${USERS_DB_NAME}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: on-failure
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  prediction-db:
+    image: postgres:latest
+    environment:
+      POSTGRES_DB: ${PREDICT_DB_NAME}
+      POSTGRES_USER: ${PREDICT_DB_USERNAME}
+      POSTGRES_PASSWORD: ${PREDICT_DB_PASSWORD}
+    volumes:
+      - predictionvolume-data:/var/lib/postgresql/data
+      - ./db/init/prediction.sql:/docker-entrypoint-initdb.d/prediction.sql
+    ports:
+      - "${PREDICT_DB_PORT}:5432"
+    networks:
+      - corninline-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PREDICT_DB_USERNAME} -d ${PREDICT_DB_NAME}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: on-failure
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  interface-db:
+    image: postgres:latest
+    environment:
+      POSTGRES_DB: ${INTERFACE_DB_NAME}
+      POSTGRES_USER: ${INTERFACE_DB_USERNAME}
+      POSTGRES_PASSWORD: ${INTERFACE_DB_PASSWORD}
+    volumes:
+      - interfacevolume-data:/var/lib/postgresql/data
+      - ./db/init/interface.sql:/docker-entrypoint-initdb.d/interface.sql
+    ports:
+      - "${INTERFACE_DB_PORT}:5432"
+    networks:
+      - corninline-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${INTERFACE_DB_USERNAME} -d ${INTERFACE_DB_NAME}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: on-failure
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  status-results-db:
+    image: postgres:latest
+    environment:
+      POSTGRES_DB: ${STATUS_RESULTS_DB_NAME}
+      POSTGRES_USER: ${STATUS_RESULTS_DB_USERNAME}
+      POSTGRES_PASSWORD: ${STATUS_RESULTS_DB_PASSWORD}
+    volumes:
+      - statusresultsvolume-data:/var/lib/postgresql/data
+      - ./db/init/status_result.sql:/docker-entrypoint-initdb.d/status_result.sql
+    ports:
+      - "${STATUS_RESULTS_DB_PORT}:5432"
+    networks:
+      - corninline-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${STATUS_RESULTS_DB_USERNAME} -d ${STATUS_RESULTS_DB_NAME}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: on-failure
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  pgadmin:
+    image: dpage/pgadmin4
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+    ports:
+      - "${PGADMIN_PORT}:80"
+    depends_on:
+      - users-db
+      # - prediction-db
+    networks:
+      - corninline-net
+    restart: on-failure
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  ############# Microservice #################
+  user-service:
+    build: ./CORNINSPEC-INLINE-USER-SERVICE
+    depends_on:
+      - users-db
+    env_file:
+      - .env
+    ports:
+      - "${USER_SERVICE_PORT}:9000"
+    networks:
+      - corninline-net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 500M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "200k"
+        max-file: "10"
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  prediction-service:
+    build: ./CORNINSPEC-INLINE-PREDICT-SERVICE
+    depends_on:
+      - prediction-db
+      - rabbitmq
+    env_file:
+      - .env
+    ports:
+      - "${PREDICT_SERVICE_PORT}:9001"
+    networks:
+      - corninline-net
+    deploy:
+      resources:
+        limits:
+          cpus: '12'
+          memory: 16G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "200k"
+        max-file: "10"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: on-failure
+    volumes:
+      - predictionvolume-data:/var/lib/prediction  # Mount the volume
+
+  prediction-result-service:
+    build:
+      context: ./CORNINSPEC-INLINE-PREDICT-RESULT-SERVICE
+      dockerfile: Dockerfile
+    depends_on:
+      - prediction-db
+      - rabbitmq
+    env_file:
+      - .env
+    ports:
+      - "${PREDICT_RESULT_PORT}:9002"
+    networks:
+      - corninline-net
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  interface-service:
+    build: ./CORNINSPEC-INLINE-INTERFACE-SERVICE
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      interface-db:
+        condition: service_healthy
+    env_file:
+      - .env
+    ports:
+      - "${INTERFACE_SERVICE_PORT}:9003"
+    networks:
+      - corninline-net
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  status-results-service:
+    build: ./CORNINSPEC-INLINE-INTERFACE-RESULT-SERVICE
+    depends_on:
+      - status-results-db
+      - rabbitmq
+    env_file:
+      - .env
+    ports:
+      - "${STATUS_RESULTS_SERVICE_PORT}:8004"
+    networks:
+      - corninline-net
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  corninline-net:
+    driver: bridge
+
+volumes:
+  corninlinevolume-data:
+    driver: local
+  predictionvolume-data:
+    driver: local
+  interfacevolume-data:
+    driver: local
+  statusresultsvolume-data:
+    driver: local
+  rabbitmq_data:
+    driver: local
