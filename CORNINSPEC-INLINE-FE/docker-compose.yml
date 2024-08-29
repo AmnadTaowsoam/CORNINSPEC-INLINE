@@ -1,0 +1,16 @@
+services:
+  corninspec-inline-ui:
+    build: ./
+    env_file:
+      - .env
+    ports:
+      - "${PORT}:9005"  # หรือพอร์ตอื่นที่เหมาะสม
+    networks:
+      - frontend-net
+    restart: always  # การตั้งค่า restart ที่เหมาะสม
+    volumes:
+      - ./frontend:/usr/src/app  # ใช้ volume ถ้าต้องการให้ container เข้าถึงไฟล์ในโฮสต์
+
+networks:
+  frontend-net:
+    driver: bridge
