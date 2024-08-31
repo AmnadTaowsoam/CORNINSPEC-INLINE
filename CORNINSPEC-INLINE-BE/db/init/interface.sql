@@ -62,5 +62,3 @@ CREATE TABLE IF NOT EXISTS interface.inspections (
 -- Index for quick lookup on request_ref in inspections table
 CREATE INDEX IF NOT EXISTS idx_inspections_request_ref ON interface.inspections(request_ref);
 
--- Index for quick lookup on request_ref in status_results table
-CREATE INDEX IF NOT EXISTS idx_status_results_request_ref ON interface.status_results(request_ref);

@@ -22,15 +22,21 @@ class BaslerCamera:
 
     def open_camera(self):
         try:
+            logging.info("Attempting to open the camera...")
             if pylon.TlFactory.GetInstance().EnumerateDevices():
                 self.camera = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateFirstDevice())
+                logging.info(f"Camera device created: {self.camera.GetDeviceInfo().GetModelName()}")
                 self.camera.Open()
-                logging.info(f"Using Camera: {self.camera.GetDeviceInfo().GetModelName()}")
+                logging.info(f"Camera opened successfully: {self.camera.GetDeviceInfo().GetModelName()}")
+                return True
             else:
                 logging.error("No Basler cameras found. Please check the connection.")
+                return False
         except Exception as e:
             logging.error(f"Error opening camera: {e}")
             self.camera = None
+            return False
+
 
     def save_image(self, image, directory, prefix="image"):
         if not os.path.exists(directory):
@@ -44,7 +50,7 @@ class BaslerCamera:
 
     def define_roi(self, image, x, y, width, height):
         return image[y:y + height, x:x + width]
-    
+
     def calculate_mic(self):
         if self.total_count == 0:
             return {
@@ -99,14 +105,18 @@ class BaslerCamera:
                 image = self.converter.Convert(grabResult)
                 img = image.GetArray()
 
-                width_desired = 1100
-                height_desired = 600
+                width_desired = 800
+                height_desired = 450
                 resized_img = cv2.resize(img, (width_desired, height_desired))
 
-                roi_x, roi_y, roi_width, roi_height = 30, 160, 1040, 400
+                # Define ROI
+                roi_x, roi_y, roi_width, roi_height = 10, 120, 780, 300
                 roi = self.define_roi(resized_img, roi_x, roi_y, roi_width, roi_height)
 
-                results = self.model.predict(source=roi)
+                # Draw the ROI rectangle on the image
+                cv2.rectangle(resized_img, (roi_x, roi_y), (roi_x + roi_width, roi_y + roi_height), (0, 255, 0), 2)
+
+                results = self.model.predict(source=roi, conf=0.5, device='cuda')
 
                 total_count = 0
                 class_counts = {}
@@ -118,6 +128,7 @@ class BaslerCamera:
                         confidence = box.conf[0]
                         bbox = box.xyxy[0].cpu().numpy().astype(int)
 
+                        # Adjust bbox position relative to the full image
                         bbox[0] += roi_x
                         bbox[1] += roi_y
                         bbox[2] += roi_x
@@ -144,7 +155,9 @@ class BaslerCamera:
 
                 grabResult.Release()
             else:
+                logging.warning("Failed to grab image.")
                 grabResult.Release()
+                return None
         except Exception as e:
             logging.error(f"An error occurred during image capture: {e}")
         finally:

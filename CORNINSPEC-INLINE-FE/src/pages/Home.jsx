@@ -89,17 +89,19 @@ function Home() {
           <QRScanner onScan={handleScan} />
         </div>
       </div>
-
-      <div className="relative w-full">
-        <CameraStream onUpdateResults={handleUpdateResults} />
-        <MicResult micData={micData} />
-      </div>
-
-      <div className="w-full mt-1">
-        <PredictResult results={predictResults} />
+  
+      <div className="flex justify-between w-full">
+        <div className="flex-1 relative">
+          <CameraStream onUpdateResults={handleUpdateResults} />
+          <MicResult micData={micData} />
+        </div>
+        <div className="w-1/3 pl-4">
+          <PredictResult results={predictResults} />
+        </div>
       </div>
     </div>
   );
+  
 }
 
 export default Home;
